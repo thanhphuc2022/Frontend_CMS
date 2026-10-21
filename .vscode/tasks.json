@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Next.js: Dev with Watch",
+      "type": "shell",
+      "command": "npx nodemon --watch src --watch package.json --ext ts,tsx,js,json --exec \"npm run dev\"",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    }
+  ]
+}

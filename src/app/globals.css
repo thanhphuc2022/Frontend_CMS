@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-sans: "Be Vietnam Pro", "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Be Vietnam Pro", "Inter", "Segoe UI", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+* {
+  scroll-behavior: smooth;
+  box-sizing: border-box;
+}
+
+body {
+  @apply bg-white text-slate-900 antialiased;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-feature-settings: "kern", "liga", "calt";
+  font-kerning: normal;
+  letter-spacing: 0;
+  line-height: 1.65;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+input,
+select,
+button,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  letter-spacing: 0;
+  line-height: 1.14;
+  text-wrap: balance;
+}
+
+p,
+li {
+  text-wrap: pretty;
+}
+
+a,
+button {
+  letter-spacing: 0;
+}
+
+.font-black {
+  font-weight: 800;
+}
+
+.btn-primary {
+  @apply inline-flex items-center rounded-full bg-sky-500 px-7 py-3.5 text-sm font-extrabold leading-none text-white shadow-xl shadow-sky-500/25 transition hover:bg-sky-600;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center rounded-full bg-white px-7 py-3.5 text-sm font-extrabold leading-none text-slate-800 shadow-sm ring-1 ring-slate-200 transition hover:text-sky-600;
+}
+
+.section-kicker {
+  @apply text-xs font-extrabold uppercase text-sky-500;
+  letter-spacing: 0.12em;
+}
+
+.section-title {
+  @apply mt-3 text-3xl font-extrabold text-slate-950 sm:text-4xl;
+  line-height: 1.18;
+}
+
+.content-card {
+  @apply overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-1 hover:shadow-xl;
+}
+
+.form-field {
+  @apply rounded-lg border border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100;
+}
+
+.form-field[type="file"] {
+  @apply cursor-pointer text-sm text-slate-600;
+}
+
+.prose {
+  color: rgb(51 65 85);
+  font-size: 17px;
+  line-height: 1.85;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  color: rgb(2 6 23);
+  font-weight: 800;
+  line-height: 1.22;
+  margin-bottom: 0.7em;
+  margin-top: 1.7em;
+}
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose blockquote,
+.prose table {
+  margin-bottom: 1.15em;
+}
+
+.prose a {
+  color: rgb(2 132 199);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.prose img {
+  border-radius: 8px;
+  margin: 1.5rem auto;
+}
+
+.tox,
+.tox textarea,
+.tox input,
+.tox button {
+  font-family: var(--font-sans) !important;
+}
+
+.tox .tox-toolbar__primary,
+.tox .tox-menubar,
+.tox .tox-statusbar {
+  background: #f8fafc !important;
+}
+
+.tox-tinymce {
+  border: 0 !important;
+  border-radius: 8px !important;
+}
