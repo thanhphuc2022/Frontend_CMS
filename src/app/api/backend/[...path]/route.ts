@@ -1,4 +1,4 @@
-import { LIVE_API_BASE } from '@/lib/api';
+import { API_BASE } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,7 @@ type RouteContext = {
 
 async function proxy(request: Request, context: RouteContext) {
   const sourceUrl = new URL(request.url);
-  const targetUrl = `${LIVE_API_BASE}/${context.params.path.join('/')}${sourceUrl.search}`;
+  const targetUrl = `${API_BASE}/${context.params.path.map(encodeURIComponent).join('/')}${sourceUrl.search}`;
   const headers = new Headers();
   const contentType = request.headers.get('content-type');
   const authorization = request.headers.get('authorization');

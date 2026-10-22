@@ -1,7 +1,10 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { apiRequest, clearTokens, CmsRecord, getAccessToken, normalizeList, recordKey, toFormData } from '@/lib/api';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiRequest, clearTokens, CmsRecord, normalizeList, recordKey, toFormData } from '@/lib/api';
+import { classifyCmsWrite, cmsJsonBody } from '@/lib/cms-modules';
+import { useSession } from '@/lib/use-session';
+import ArticleManager from './articles/ArticleManager';
 
 type Field = {
   name: string;
@@ -9,6 +12,7 @@ type Field = {
   type?: 'text' | 'textarea' | 'file' | 'select';
   options?: string[];
   required?: boolean;
+  source?: string;
 };
 
 type ModuleConfig = {
@@ -41,49 +45,14 @@ const modules: ModuleConfig[] = [
     label: 'Bài viết',
     description: 'Quản lý bài viết Post. Khi cần thêm bài mới, mở trang soạn riêng để thao tác rộng rãi hơn.',
     listPath: '/AllPost',
-    createHref: '/admin/posts/create',
-    updatePath: (id) => `/updatePost/${id}`,
-    deletePath: (id) => `/deletePost/${id}`,
-    idField: 'id',
-    multipart: true,
-    columns: ['title', 'categoryId', 'date', 'views'],
-    updateFields: [
-      { name: 'title', label: 'Tiêu đề', required: true },
-      { name: 'slug', label: 'Slug', required: true },
-      { name: 'description', label: 'Mô tả', type: 'textarea', required: true },
-      { name: 'category', label: 'Tên danh mục', required: true },
-      { name: 'content', label: 'Nội dung', type: 'textarea', required: true },
-      { name: 'file', label: 'Ảnh mới', type: 'file' },
-    ],
+    columns: [], // CRUD is handled by ArticleManager using detail-by-ID data.
   },
   {
     key: 'news',
     label: 'Tin tức',
     description: 'Quản lý tin tức, loại tin và tag.',
     listPath: '/AllNews',
-    createPath: '/createNews',
-    updatePath: (id) => `/updateNews/${id}`,
-    deletePath: (id) => `/deleteNews/${id}`,
-    idField: 'id',
-    multipart: true,
-    columns: ['title', 'typesid', 'date', 'views'],
-    createFields: [
-      { name: 'title', label: 'Tiêu đề', required: true },
-      { name: 'description', label: 'Mô tả', type: 'textarea', required: true },
-      { name: 'types', label: 'Tên loại tin', required: true },
-      { name: 'tag', label: 'Tag' },
-      { name: 'content', label: 'Nội dung', type: 'textarea', required: true },
-      { name: 'file', label: 'Ảnh đại diện', type: 'file', required: true },
-    ],
-    updateFields: [
-      { name: 'title', label: 'Tiêu đề', required: true },
-      { name: 'slug', label: 'Slug', required: true },
-      { name: 'description', label: 'Mô tả', type: 'textarea', required: true },
-      { name: 'types', label: 'Tên loại tin', required: true },
-      { name: 'tag', label: 'Tag' },
-      { name: 'content', label: 'Nội dung', type: 'textarea', required: true },
-      { name: 'file', label: 'Ảnh mới', type: 'file' },
-    ],
+    columns: [],
   },
   {
     key: 'categories',
@@ -182,7 +151,7 @@ const modules: ModuleConfig[] = [
     idField: '_id',
     columns: ['content'],
     createFields: [{ name: 'content_about_index', label: 'Nội dung', type: 'textarea', required: true }],
-    updateFields: [{ name: 'content_about_index', label: 'Nội dung', type: 'textarea', required: true }],
+    updateFields: [{ name: 'content_about_index', source: 'content', label: 'Nội dung', type: 'textarea', required: true }],
   },
   {
     key: 'about-images',
@@ -231,7 +200,7 @@ const modules: ModuleConfig[] = [
   {
     key: 'accounts',
     label: 'Tài khoản',
-    description: 'Quản trị account, role và xóa tài khoản.',
+    description: 'Chỉ Admin (role=true) được quản lý tài khoản. role=false là người dùng đã đăng nhập; backend kiểm tra quyền ở mỗi request. Không thể sửa/xóa chính mình.',
     listPath: '/allaccount',
     updatePath: (username) => `/updateauth/${username}`,
     deletePath: (username) => `/deleteaccount/${username}`,
@@ -249,45 +218,79 @@ export default function AdminDashboard() {
   const [confirmAction, setConfirmAction] = useState<PendingAction>(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [tokenReady, setTokenReady] = useState(false);
+  const session = useSession();
+  const [reviewRequired, setReviewRequired] = useState(false);
+  const [reviewLoaded, setReviewLoaded] = useState(false);
+  const [listReady, setListReady] = useState(false);
+  const loadVersion = useRef(0);
+  const invalidateLoads = useCallback(() => { loadVersion.current++; }, []);
+  const writing = useRef(false);
   const active = useMemo(() => modules.find((module) => module.key === activeKey) || modules[0], [activeKey]);
 
   const loadData = useCallback(async (moduleConfig = active) => {
+    const version = ++loadVersion.current;
     setLoading(true);
-    setMessage('');
     const result = await apiRequest(moduleConfig.listPath, { method: 'GET' }, Boolean(moduleConfig.authList));
-    setItems(normalizeList(result.data));
+    if (version !== loadVersion.current) return;
     setLoading(false);
-    if (!result.ok) setMessage(result.message);
+    const data = result.data as Record<string, unknown> | null;
+    const validList = Array.isArray(result.data) || moduleConfig.key === 'banner' && Array.isArray(data?.content_banner) || moduleConfig.key === 'contact' && Array.isArray(data?.contact);
+    setListReady(result.ok && validList);
+    if (result.ok && validList) { setItems(normalizeList(result.data)); setReviewLoaded(true); }
+    else {
+      if (result.status === 401 || result.status === 403) setItems([]);
+      setMessage(result.ok ? 'Response danh sách không đúng hợp đồng. Giữ dữ liệu đang có và kiểm tra backend.' : result.message);
+    }
   }, [active]);
 
   useEffect(() => {
-    setTokenReady(Boolean(getAccessToken()));
+    const contentModule = new URL(window.location.href).searchParams.get('contentModule');
+    if (contentModule === 'posts' || contentModule === 'news') setActiveKey(contentModule);
   }, []);
 
   useEffect(() => {
+    loadVersion.current++;
+    setItems([]);
+    setListReady(false);
+    setMessage('');
+    setReviewRequired(false);
+    setReviewLoaded(false);
     setSelected(null);
-    loadData(active);
-  }, [active, loadData]);
+    if (active.key !== 'posts' && active.key !== 'news') loadData(active);
+    return invalidateLoads;
+  }, [active, loadData, invalidateLoads]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>, action: 'create' | 'update') {
     event.preventDefault();
+    if (writing.current || reviewRequired) return;
     const form = event.currentTarget;
     const formData = new FormData(form);
     const id = selected ? String(selected[active.idField || 'id'] || '') : '';
-    const path = action === 'create' ? active.createPath : active.updatePath?.(id);
+    const path = action === 'create' ? active.createPath : active.updatePath?.(encodeURIComponent(id));
 
     if (!path) return;
+    if (['contact', 'about-content'].includes(active.key) && (!listReady || items.length > 1 || action === 'create' && items.length > 0)) {
+      setMessage('Endpoint này thao tác bản ghi đầu tiên, không nhận ID. Cần danh sách đã tải và chỉ một bản ghi để sửa/xóa; không tạo thêm khi đã có dữ liệu.');
+      return;
+    }
+    let body: FormData | string;
+    try {
+      const fields = action === 'create' ? active.createFields || [] : active.updateFields || [];
+      const file = formData.get('file');
+      body = active.multipart ? buildMultipartBody(fields, formData, action === 'update' && !(file instanceof File && file.size > 0)) : cmsJsonBody(active.key, formData);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Dữ liệu không hợp lệ'); return; }
+    writing.current = true;
     setLoading(true);
     setMessage('');
 
-    const fields = action === 'create' ? active.createFields || [] : active.updateFields || [];
-    const body = active.multipart ? buildMultipartBody(fields, formData) : JSON.stringify(Object.fromEntries(formData.entries()));
     const result = await apiRequest(path, { method: 'POST', body }, true);
-
+    writing.current = false;
+    const outcome = classifyCmsWrite(active.key, action, result);
     setLoading(false);
-    setMessage(result.message);
-    if (result.ok) {
+    setMessage(outcome.message);
+    setReviewRequired(outcome.review);
+    setReviewLoaded(false);
+    if (outcome.success) {
       form.reset();
       setSelected(null);
       await loadData(active);
@@ -295,17 +298,26 @@ export default function AdminDashboard() {
   }
 
   async function handleDelete(item: CmsRecord) {
+    if (writing.current || reviewRequired) return;
     const id = String(item[active.idField || 'id'] || '');
-    const path = active.deletePath?.(id);
+    const path = active.deletePath?.(encodeURIComponent(id));
     if (!path) return;
+    if (active.key === 'about-content' && (!listReady || items.length !== 1)) {
+      setMessage('Không thể nhắm ID qua endpoint này. Chỉ xóa khi danh sách đã tải và có đúng một bản ghi.'); return;
+    }
 
+    writing.current = true;
     setLoading(true);
     setMessage('');
     const body = active.deleteBodyField ? JSON.stringify({ [active.deleteBodyField]: id }) : undefined;
     const result = await apiRequest(path, { method: 'POST', body }, true);
+    writing.current = false;
+    const outcome = classifyCmsWrite(active.key, 'delete', result);
     setLoading(false);
-    setMessage(result.message);
-    if (result.ok) await loadData(active);
+    setMessage(outcome.message);
+    setReviewRequired(outcome.review);
+    setReviewLoaded(false);
+    if (outcome.success) await loadData(active);
   }
 
   function requestEdit(item: CmsRecord) {
@@ -341,15 +353,16 @@ export default function AdminDashboard() {
           </div>
           <div className="flex flex-wrap gap-3">
             <a href="/account" className="btn-secondary">Tài khoản</a>
-            <button className="btn-secondary" onClick={() => { clearTokens(); setTokenReady(false); }}>Đăng xuất</button>
+            <button className="btn-secondary" disabled={loading} onClick={() => { clearTokens(); invalidateLoads(); setItems([]); setListReady(false); }}>Đăng xuất</button>
           </div>
         </div>
       </section>
 
-      {!tokenReady && (
+      {(
         <div className="mx-auto mt-6 max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
-            Chưa có access token. Hãy đăng nhập tại <a className="underline" href="/login">/login</a> trước khi tạo, sửa hoặc xóa dữ liệu.
+            {session.message} <a className="underline" href="/login">Đăng nhập</a>
+            <button type="button" className="ml-3 underline" onClick={() => void session.check()}>Kiểm tra phiên</button>
           </div>
         </div>
       )}
@@ -359,39 +372,51 @@ export default function AdminDashboard() {
           {modules.map((module) => (
             <button
               key={module.key}
+              disabled={loading}
               className={`block w-full rounded-lg px-4 py-3 text-left text-sm font-bold transition ${module.key === activeKey ? 'bg-sky-500 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-              onClick={() => setActiveKey(module.key)}
+              onClick={() => {
+                setActiveKey(module.key);
+                const url = new URL(window.location.href);
+                if (module.key === 'posts' || module.key === 'news') url.searchParams.set('contentModule', module.key);
+                else url.searchParams.delete('contentModule');
+                window.history.replaceState(null, '', url);
+              }}
             >
               {module.label}
             </button>
           ))}
         </aside>
 
-        <div className="space-y-6">
+        {active.key === 'posts' || active.key === 'news' ? <ArticleManager key={active.key} kind={active.key} /> : <div className="space-y-6">
           <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
                 <h2 className="text-2xl font-black text-slate-950">{active.label}</h2>
                 <p className="mt-2 text-slate-600">{active.description}</p>
+                {['banner', 'about', 'about-content', 'about-images', 'logos', 'contact'].includes(active.key) && <p className="mt-2 text-sm text-slate-600">Chỉ Admin (role=true) được tạo/sửa/xóa. Backend xác minh token và quyền mỗi thao tác.</p>}
               </div>
               <div className="flex flex-wrap gap-3">
                 {active.createHref && <a className="btn-primary" href={active.createHref}>Thêm bài viết</a>}
                 {active.createPath && active.createFields && !active.createHref && (
-                  <button className="btn-primary" onClick={() => setSelected({ __mode: 'create' })}>Thêm mới</button>
+                  <button className="btn-primary" disabled={loading || reviewRequired || ['contact', 'about-content'].includes(active.key) && (!listReady || items.length > 0)} onClick={() => setSelected({ __mode: 'create' })}>Thêm mới</button>
                 )}
                 <button className="btn-secondary" onClick={() => loadData(active)} disabled={loading}>{loading ? 'Đang tải...' : 'Tải lại'}</button>
               </div>
             </div>
             {message && <p className="mt-4 rounded-lg bg-sky-50 p-4 text-sm font-semibold text-sky-800">{message}</p>}
+            {reviewRequired && <div className="mt-3 text-sm">
+              <p>Đối chiếu dữ liệu vừa tải với bản nháp, kể cả ảnh, trước khi thử lại. Tải lại không gửi request ghi.</p>
+              <button type="button" className="underline" disabled={!reviewLoaded || loading} onClick={() => { setReviewRequired(false); setMessage('Đã xác nhận đối chiếu. Bạn có thể thử lại thủ công.'); }}>Tôi đã đối chiếu danh sách mới và xác nhận thử lại</button>
+            </div>}
           </div>
 
-          <RecordsList config={active} items={items} selected={selected} onSelect={requestEdit} onDelete={requestDelete} loading={loading} />
+          <RecordsList config={active} items={items} selected={selected} onSelect={requestEdit} onDelete={requestDelete} loading={loading || reviewRequired} />
 
           {selected?.__mode === 'create' && active.createPath && active.createFields && (
-            <EditorForm title={`Thêm ${active.label}`} fields={active.createFields} loading={loading} onSubmit={(event) => handleSubmit(event, 'create')} />
+            <EditorForm key={active.key} title={`Thêm ${active.label}`} fields={active.createFields} loading={loading} blocked={reviewRequired} message={message} onSubmit={(event) => handleSubmit(event, 'create')} />
           )}
 
-        </div>
+        </div>}
       </section>
 
       {selected && selected.__mode !== 'create' && active.updatePath && active.updateFields && (
@@ -402,7 +427,15 @@ export default function AdminDashboard() {
                 Đóng
               </button>
             </div>
-            <EditorForm title={`Cập nhật: ${String(selected[active.idField || 'id'] || '')}`} fields={active.updateFields} record={selected} imageFields={active.imageFields} loading={loading} onSubmit={(event) => handleSubmit(event, 'update')} />
+            <EditorForm key={recordKey(selected, 0)} title={`Cập nhật: ${String(selected[active.idField || 'id'] || '')}`} fields={active.updateFields} record={selected} imageFields={active.imageFields} loading={loading} blocked={reviewRequired} message={message} onSubmit={(event) => handleSubmit(event, 'update')} />
+            {reviewRequired && (
+              <div className="rounded-lg bg-white p-4 text-sm">
+                <p>Giữ form mở và đối chiếu danh sách mới trước khi thử lại.</p>
+                <button type="button" className="underline" disabled={loading} onClick={() => void loadData(active)}>Tải lại danh sách để đối chiếu</button>
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap">{JSON.stringify(reviewRecords(items, active), null, 2)}</pre>
+                <button type="button" className="underline" disabled={!reviewLoaded || loading} onClick={() => setReviewRequired(false)}>Tôi đã đối chiếu và xác nhận thử lại thủ công</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -453,7 +486,7 @@ function RecordsList({
               ))}
             </div>
             <div className="flex items-start justify-start gap-3 lg:justify-end">
-              {config.updatePath && <button className="rounded-full bg-sky-50 px-4 py-2 text-sm font-black text-sky-700 hover:bg-sky-100" onClick={() => onSelect(item)}>Sửa</button>}
+              {config.updatePath && <button disabled={loading} className="rounded-full bg-sky-50 px-4 py-2 text-sm font-black text-sky-700 hover:bg-sky-100" onClick={() => onSelect(item)}>Sửa</button>}
               {config.deletePath && <button className="rounded-full bg-rose-50 px-4 py-2 text-sm font-black text-rose-700 hover:bg-rose-100" onClick={() => onDelete(item)} disabled={loading}>Xóa</button>}
             </div>
           </article>
@@ -474,6 +507,8 @@ function EditorForm({
   record,
   imageFields,
   loading,
+  blocked,
+  message,
   onSubmit,
 }: {
   title: string;
@@ -481,12 +516,14 @@ function EditorForm({
   record?: CmsRecord;
   imageFields?: string[];
   loading: boolean;
+  blocked?: boolean;
+  message?: string;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const currentImage = record ? getFirstImageUrl(record, imageFields) : '';
 
   return (
-    <form onSubmit={onSubmit} className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200">
+    <form method="post" onSubmit={onSubmit} className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200">
       <h3 className="text-xl font-black text-slate-950">{title}</h3>
       {currentImage && (
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -500,11 +537,12 @@ function EditorForm({
         {fields.map((field) => (
           <label key={field.name} className={field.type === 'textarea' || field.type === 'file' ? 'block lg:col-span-2' : 'block'}>
             <span className="mb-2 block text-sm font-bold text-slate-700">{field.label}</span>
-            <FieldInput field={field} value={record?.[field.name]} />
+            <FieldInput field={field} value={record?.[field.source || field.name]} />
           </label>
         ))}
       </div>
-      <button className="btn-primary mt-6 justify-center" disabled={loading}>{loading ? 'Đang xử lý...' : title}</button>
+      <button className="btn-primary mt-6 justify-center" disabled={loading || blocked}>{loading ? 'Đang xử lý...' : title}</button>
+      {message && <p role="status" className="mt-3 text-sm">{message}</p>}
     </form>
   );
 }
@@ -532,7 +570,7 @@ function FieldInput({ field, value }: { field: Field; value: unknown }) {
 }
 
 function CellValue({ value }: { value: unknown }) {
-  if (typeof value === 'boolean') return <span>{value ? 'Admin' : 'Editor'}</span>;
+  if (typeof value === 'boolean') return <span>{value ? 'Admin' : 'Người dùng (không quản trị)'}</span>;
   if (typeof value === 'string' && value.startsWith('http')) {
     if (isImageUrl(value)) {
       return (
@@ -608,6 +646,11 @@ function getRecordDisplayName(record: CmsRecord, config: ModuleConfig) {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : 'Không có tên';
 }
 
+function reviewRecords(items: CmsRecord[], config: ModuleConfig) {
+  const keys = [...new Set([...config.columns, ...(config.updateFields || []).map((field) => field.source || field.name).filter((name) => name !== 'file')])];
+  return items.map((item) => Object.fromEntries(keys.map((key) => [key, item[key]])));
+}
+
 function isImageUrl(value: string) {
   return /^https?:\/\//i.test(value) && (/\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value) || value.includes('res.cloudinary.com'));
 }
@@ -623,7 +666,7 @@ function getFirstImageUrl(record: CmsRecord, fields: string[] = []) {
   return '';
 }
 
-function buildMultipartBody(fields: Field[], formData: FormData) {
+function buildMultipartBody(fields: Field[], formData: FormData, jsonWithoutFile = false) {
   const file = formData.get('file');
   const values: Record<string, string> = {};
 
@@ -631,5 +674,9 @@ function buildMultipartBody(fields: Field[], formData: FormData) {
     if (field.type !== 'file') values[field.name] = String(formData.get(field.name) || '');
   });
 
+  if (Object.values(values).some((value) => value.length > 500_000) || (values.title?.length || 0) > 200 || (values.linkservices?.length || 0) > 2000) throw new Error('Dữ liệu vượt giới hạn backend. Dữ liệu đã nhập được giữ nguyên.');
+  if (jsonWithoutFile) return JSON.stringify(values);
+  if (Object.values(values).some((value) => new TextEncoder().encode(value).byteLength >= 100 * 1024)) throw new Error('Mỗi trường gửi kèm ảnh phải nhỏ hơn 100 KiB UTF-8. Giữ bản nháp và rút gọn nội dung trước khi gửi.');
+  if (file instanceof File && file.size > 5 * 1024 * 1024) throw new Error('Ảnh tối đa 5 MiB. Dữ liệu đã nhập được giữ nguyên.');
   return toFormData(values, file instanceof File && file.size > 0 ? file : null);
 }

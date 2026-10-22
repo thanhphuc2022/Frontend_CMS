@@ -1,9 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import Logo from '@/components/Logo';
-import { getAccessToken } from '@/lib/api';
+import { useSession } from '@/lib/use-session';
 import { services } from '@/lib/serviceData';
 
 const navItems = [
@@ -14,22 +13,8 @@ const navItems = [
 ];
 
 export default function Header() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  useEffect(() => {
-    const syncAuthState = () => setIsLoggedIn(Boolean(getAccessToken()));
-
-    syncAuthState();
-    window.addEventListener('storage', syncAuthState);
-    window.addEventListener('thny-auth-change', syncAuthState);
-    window.addEventListener('focus', syncAuthState);
-
-    return () => {
-      window.removeEventListener('storage', syncAuthState);
-      window.removeEventListener('thny-auth-change', syncAuthState);
-      window.removeEventListener('focus', syncAuthState);
-    };
-  }, []);
+  const session = useSession();
+  const isLoggedIn = session.state === 'verified';
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 shadow-sm shadow-slate-900/5 backdrop-blur">

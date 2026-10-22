@@ -25,6 +25,8 @@ import 'tinymce/plugins/insertdatetime';
 import 'tinymce/plugins/media';
 import 'tinymce/plugins/table';
 import 'tinymce/plugins/help';
+// Help loads this Resource dynamically unless it is bundled before editor init.
+import 'tinymce/plugins/help/js/i18n/keynav/en';
 import 'tinymce/plugins/wordcount';
 import 'tinymce/skins/ui/oxide/skin.min.css';
 import 'tinymce/skins/content/default/content.min.css';
@@ -34,10 +36,12 @@ export default function TinyMceEditor({
   value,
   onChange,
   resetSignal,
+  uploadPath = '/uploadimagesPost',
 }: {
   value: string;
   onChange: (value: string) => void;
   resetSignal?: number;
+  uploadPath?: '/uploadimagesPost' | '/uploadimagesNews';
 }) {
   const editorRef = useRef<TinyMceEditorInstance | null>(null);
 
@@ -71,7 +75,7 @@ export default function TinyMceEditor({
           images_upload_handler: async (blobInfo) => {
             const formData = new FormData();
             formData.append('file', blobInfo.blob(), blobInfo.filename());
-            const result = await apiRequest<{ location?: string }>('/uploadimagesPost', { method: 'POST', body: formData }, false);
+            const result = await apiRequest<{ location?: string }>(uploadPath, { method: 'POST', body: formData });
 
             if (!result.ok || !result.data?.location) {
               throw new Error(result.message || 'Upload ảnh thất bại');

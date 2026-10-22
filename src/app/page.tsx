@@ -20,7 +20,7 @@ import logoBreaktalk from '@/webhd/logo-breaktalk.webp';
 import PublicContactForm from '@/components/PublicContactForm';
 import { API_BASE } from '@/lib/api';
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 type CmsItem = {
   id?: string;
@@ -47,7 +47,7 @@ type PaginatedResponse = {
 
 async function getApi<T>(path: string): Promise<T | null> {
   try {
-    const response = await fetch(`${API_BASE}${path}`, { next: { revalidate: 60 } });
+    const response = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
 
     if (!response.ok) {
       return null;

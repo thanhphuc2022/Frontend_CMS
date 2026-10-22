@@ -8,3 +8,4 @@ npm-debug.log*
 .env
 .env*.local
 !.env.example
+/docs/round2-live-session-20261022-1319.json
